@@ -1,12 +1,8 @@
 import numpy as np
 import sys
-import time
+import tqdm
+from typing import Tuple
 np.set_printoptions(suppress=True,linewidth=sys.maxsize,threshold=sys.maxsize) ## allow to print on a wider range
-
-
-# extreme:      avg. 0.91 [s]
-# hard:         avg. 0.31 [s]
-# easy:         avg. 0.03 [s]
 
 #############################################################
 #                        PARAMETERS                         #
@@ -124,7 +120,7 @@ def neighbors(row_index: int, col_index: int, matrix: np.ndarray) -> np.ndarray:
 
 
 ## We remove the possibilities by following the 3 basic rules of sudoku...
-def eliminate_possibilities(sudoku: np.ndarray, possibilities: np.ndarray) -> tuple[np.array, bool] :
+def eliminate_possibilities(sudoku: np.ndarray, possibilities: np.ndarray) -> Tuple[np.array, bool] :
     change = False
     for i in range(9):
         for j in range(9):
@@ -163,7 +159,7 @@ def eliminate_possibilities(sudoku: np.ndarray, possibilities: np.ndarray) -> tu
 
 
 ## if a possibiliy in a sub-grid forms a line, it can be removed from other cells in that line -> the line method
-def line_elimination(sudoku: np.ndarray, possibilities: np.ndarray) -> tuple[np.array, bool] :
+def line_elimination(sudoku: np.ndarray, possibilities: np.ndarray) -> Tuple[np.array, bool] :
     change = False
 
     if line_debug: 
@@ -231,7 +227,7 @@ def line_elimination(sudoku: np.ndarray, possibilities: np.ndarray) -> tuple[np.
 
 
 
-def solve(sudoku: np.ndarray, possibilities: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
+def solve(sudoku: np.ndarray, possibilities: np.ndarray) -> Tuple[np.ndarray, np.ndarray, int]:
     """
     :sudoku: The sudoku matrix
     :possibilities: The possibilities matrix
@@ -389,67 +385,56 @@ def solve(sudoku: np.ndarray, possibilities: np.ndarray) -> tuple[np.ndarray, np
 #############################################################
 
 
-if line_debug:
-    print("#===# LINE DEBUGGING MESSAGES ENABLED #===#\n")
-if branch_debug:
-    print("#===# BRANCH DEBUGGING MESSAGES ENABLED #===#\n")
-if global_debug:
-    print("#===# GLOBAL DEBUGGING MESSAGES ENABLED #===#\n")
+def solver(parameters: dict, debug: dict, file: str) -> None:
+    if debug['locked_candidates']:
+        print("#===# LINE DEBUGGING MESSAGES ENABLED #===#\n")
+    if debug['bruteforce']:
+        print("#===# BRANCH DEBUGGING MESSAGES ENABLED #===#\n")
+    if debug['global']:
+        print("#===# GLOBAL DEBUGGING MESSAGES ENABLED #===#\n")
 
 
-## starting with the easy ones
-with open(file=file, mode="r", encoding="utf8") as file:
-    lines = file.read().splitlines() ## list of sudokus (each one is an array)
-    grids = to_matrix(lines)
-        
-    if only_one: 
-        if timer:
-            start_time = time.process_time()
-
-        sudoku = np.array(grids[index],dtype="<U9")
-        print(f"-> Sudoku: \n{sudoku}\n")
-        possibilities = build_possibilities(sudoku)
-
-        sudoku, _,  iterations = solve(sudoku, possibilities)
-
-        if timer: 
-            end_time = time.process_time()
-
-        print(f"-> Solved in {iterations} iterations, used line: {used_line}, used branch: {used_branch}: {valid(sudoku)}\n{sudoku}\n")
-        if timer:
-            print(f'Time: {(end_time-start_time):.2f} [s]')
-
-    else:
-        solved_count = 0
-        total = len(grids.keys())
-        
-        ## Turn off debugging to prevent console spam
-        global_debug = False
-        line_debug = False
-        branch_debug = False
-
-        if timer: 
-            start_time = time.process_time()
-        for k in grids.keys():
+    ## starting with the easy ones
+    with open(file=file, mode="r", encoding="utf8") as file:
+        lines = file.read().splitlines() ## list of sudokus (each one is an array)
+        grids = to_matrix(lines)
             
-            sudoku = np.array(grids[k],dtype="<U9")
+        if parameters['one_sudoku']: 
+            
+            sudoku = np.array(grids[parameters['index']], dtype="<U9")
+            print(f"-> Sudoku: \n{sudoku}\n")
             possibilities = build_possibilities(sudoku)
+            sudoku, _,  iterations = solve(sudoku, possibilities)
+            print(f"-> Solved in {iterations} iterations, used line: {used_line}, used branch: {used_branch}: {valid(sudoku)}\n{sudoku}\n")
+
+        else:
+            solved_count = 0
+            total = len(grids.keys())
             
-            try:
-                sudoku, _, _ = solve(sudoku, possibilities)
-            except: raise Exception(f'There was a problem solving problem {k}...')
+            ## Turn off debugging to prevent console spam
+            debug['global'] = False
+            debug['locked_candidates'] = False
+            debug['bruteforce'] = False
+
+            p_bar = tqdm(total = len(grids.keys()), leave = True)
+            p_bar.set_description('solved sudokus')
+            for k in grids.keys():
+                
+                sudoku = np.array(grids[k],dtype="<U9")
+                possibilities = build_possibilities(sudoku)
+                
+                try:
+                    sudoku, _, _ = solve(sudoku, possibilities)
+                except: raise Exception(f'There was a problem solving problem {k}...')
 
 
-            if valid(sudoku): 
-                solved_count += 1
+                if valid(sudoku): 
+                    solved_count += 1
 
-            iterations = 0
-            exit = False
-            stack.clear()
-            del sudoku, possibilities
-        if timer:
-            end_time = time.process_time()
+                iterations = 0
+                p_bar.update(1)
+                exit = False
+                stack.clear()
+                del sudoku, possibilities
 
-        print(f'solved {solved_count} sudokus out of {total}')
-        if timer: 
-            print(f'Time: {(end_time-start_time):.3f} [s] (avg: {((end_time-start_time)/total):.2f})')
+            print(f'solved {solved_count} sudokus out of {total}')
